@@ -99,14 +99,13 @@ func (d *BME280) setup() error {
 	return nil
 }
 
-func (d *BME280) calibrateTemp() error {
+func (d *BME280) calibrateTemp() {
 	d.digT1 = uint16(d.calibval[1])<<8 | uint16(d.calibval[0])
 	d.digT2 = int16(d.calibval[3])<<8 | int16(d.calibval[2])
 	d.digT3 = int16(d.calibval[5])<<8 | int16(d.calibval[4])
-	return nil
 }
 
-func (d *BME280) calibratePres() error {
+func (d *BME280) calibratePres() {
 	d.digP1 = uint16(d.calibval[7])<<8 | uint16(d.calibval[6])
 	d.digP2 = int16(d.calibval[9])<<8 | int16(d.calibval[8])
 	d.digP3 = int16(d.calibval[11])<<8 | int16(d.calibval[10])
@@ -116,16 +115,14 @@ func (d *BME280) calibratePres() error {
 	d.digP7 = int16(d.calibval[19])<<8 | int16(d.calibval[18])
 	d.digP8 = int16(d.calibval[21])<<8 | int16(d.calibval[20])
 	d.digP9 = int16(d.calibval[23])<<8 | int16(d.calibval[22])
-	return nil
 }
 
-func (d *BME280) calibrateHum() error {
+func (d *BME280) calibrateHum() {
 	d.digH2 = int16(d.calibval[1])<<8 | int16(d.calibval[0])
 	d.digH3 = uint8(d.calibval[2])
 	d.digH4 = int16(d.calibval[3])<<4 | (0x0f & int16(d.calibval[4]))
 	d.digH5 = int16(d.calibval[5])<<4 | (int16(d.calibval[4]) >> 4)
 	d.digH6 = int8(d.calibval[6])
-	return nil
 }
 
 func (d *BME280) calibrate() error {
@@ -134,20 +131,16 @@ func (d *BME280) calibrate() error {
 		return err
 	}
 
-	if err := d.calibrateTemp(); err != nil {
-		return err
-	}
-	if err := d.calibratePres(); err != nil {
-		return err
-	}
+	d.calibrateTemp()
+	d.calibratePres()
+
 	d.digH1 = uint8(d.calibval[25])
 	d.calibval = make([]byte, 7)
 	if err := d.Bus.ReadFromReg(DeviceAddr, byte(0xe1), d.calibval); err != nil {
 		return err
 	}
-	if err := d.calibrateHum(); err != nil {
-		return err
-	}
+
+	d.calibrateHum()
 
 	return nil
 }
