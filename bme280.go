@@ -1,19 +1,18 @@
 package bme280
 
 import (
-	//"fmt"
 	"github.com/kidoman/embd"
-	"sync"
 )
 
+// DeviceAddr is address for BME280
+// ReadDataAddr is address for fetching data
 const (
-	DeviceAddr      = 0x76
-	CtrlHumAddr     = 0xf2
-	CtrlMeasureAddr = 0xf4
-	CtrlConfAddr    = 0xf5
+	DeviceAddr   = 0x76
+	ReadDataAddr = 0xf7
 )
 
-type BME280Opt struct {
+// Opt : options for BME280
+type Opt struct {
 	TemperatureOverSampling uint
 	PressureOverSampling    uint
 	HumidityOverSampling    uint
@@ -23,8 +22,9 @@ type BME280Opt struct {
 	SPI3WEnable             bool
 }
 
-func NewOpt() *BME280Opt {
-	return &BME280Opt{
+// NewOpt : initialize opts
+func NewOpt() *Opt {
+	return &Opt{
 		TemperatureOverSampling: 1, // Temperature oversampling x 1
 		PressureOverSampling:    1, // Pressure oversampling x 1
 		HumidityOverSampling:    1, // Humidity oversampling x 1
@@ -35,11 +35,13 @@ func NewOpt() *BME280Opt {
 	}
 }
 
-func (o *BME280Opt) MeasureReg() byte {
+// MeasureReg : return byte for measuring setting
+func (o *Opt) MeasureReg() byte {
 	return byte((o.TemperatureOverSampling << 5) | (o.PressureOverSampling << 2) | o.Mode)
 }
 
-func (o *BME280Opt) ConfigReg() byte {
+// ConfigReg : return byte for config
+func (o *Opt) ConfigReg() byte {
 	var spi3wEnable uint
 	if o.SPI3WEnable {
 		spi3wEnable = 1
@@ -49,39 +51,39 @@ func (o *BME280Opt) ConfigReg() byte {
 	return byte((o.TStandby << 5) | (o.Filter << 2) | spi3wEnable)
 }
 
+// BME280 : client for device handling
 type BME280 struct {
-	Bus        embd.I2CBus
-	Opt        *BME280Opt
-	cmu        sync.RWMutex
-	calibrated bool
-	calibval   []byte
-	tfine      int32
-	digT1      uint16
-	digT2      int16
-	digT3      int16
-	digP1      uint16
-	digP2      int16
-	digP3      int16
-	digP4      int16
-	digP5      int16
-	digP6      int16
-	digP7      int16
-	digP8      int16
-	digP9      int16
-	digH1      uint8
-	digH2      int16
-	digH3      uint8
-	digH4      int16
-	digH5      int16
-	digH6      int8
+	Bus      embd.I2CBus
+	Opt      *Opt
+	calibval []byte
+	tfine    int32
+	digT1    uint16
+	digT2    int16
+	digT3    int16
+	digP1    uint16
+	digP2    int16
+	digP3    int16
+	digP4    int16
+	digP5    int16
+	digP6    int16
+	digP7    int16
+	digP8    int16
+	digP9    int16
+	digH1    uint8
+	digH2    int16
+	digH3    uint8
+	digH4    int16
+	digH5    int16
+	digH6    int8
 }
 
-func New(bus embd.I2CBus, opt *BME280Opt) (*BME280, error) {
+// New : initialize BME280
+func New(bus embd.I2CBus, opt *Opt) (*BME280, error) {
 	bme280 := &BME280{Bus: bus, Opt: opt}
 	if err := bme280.setup(); err != nil {
 		return nil, err
 	}
-	if err := bme280.callibrate(); err != nil {
+	if err := bme280.calibrate(); err != nil {
 		return nil, err
 	}
 	return bme280, nil
@@ -89,10 +91,8 @@ func New(bus embd.I2CBus, opt *BME280Opt) (*BME280, error) {
 
 func (d *BME280) setup() error {
 	regs := []byte{byte(d.Opt.HumidityOverSampling), d.Opt.MeasureReg(), d.Opt.ConfigReg()}
-	addrs := []byte{CtrlHumAddr, CtrlMeasureAddr, CtrlConfAddr}
-
-	for i := 0; i <= 2; i = i + 1 {
-		if err := d.Bus.WriteByteToReg(DeviceAddr, addrs[i], regs[i]); err != nil {
+	for i, addr := range []byte{0xf2, 0xf4, 0xf5} {
+		if err := d.Bus.WriteByteToReg(DeviceAddr, addr, regs[i]); err != nil {
 			return err
 		}
 	}
@@ -100,24 +100,22 @@ func (d *BME280) setup() error {
 }
 
 func (d *BME280) calibrateTemp() error {
-	d.digT1 = uint16(uint16(d.calibval[1])<<8 | uint16(d.calibval[0]))
-	d.digT2 = int16(int16(d.calibval[3])<<8 | int16(d.calibval[2]))
-	d.digT3 = int16(int16(d.calibval[5])<<8 | int16(d.calibval[4]))
-	// fmt.Printf("T 0x%x 0x%x 0x%x 0x%x\n", calib[2], calib[3], calib[4], calib[5])
+	d.digT1 = uint16(d.calibval[1])<<8 | uint16(d.calibval[0])
+	d.digT2 = int16(d.calibval[3])<<8 | int16(d.calibval[2])
+	d.digT3 = int16(d.calibval[5])<<8 | int16(d.calibval[4])
 	return nil
 }
 
 func (d *BME280) calibratePres() error {
-	d.digP1 = uint16(uint16(d.calibval[7])<<8 | uint16(d.calibval[6]))
-	d.digP2 = int16(int16(d.calibval[9])<<8 | int16(d.calibval[8]))
-	d.digP3 = int16(int16(d.calibval[11])<<8 | int16(d.calibval[10]))
-	d.digP4 = int16(int16(d.calibval[13])<<8 | int16(d.calibval[12]))
-	d.digP5 = int16(int16(d.calibval[15])<<8 | int16(d.calibval[14]))
-	d.digP6 = int16(int16(d.calibval[17])<<8 | int16(d.calibval[16]))
-	d.digP7 = int16(int16(d.calibval[19])<<8 | int16(d.calibval[18]))
-	d.digP8 = int16(int16(d.calibval[21])<<8 | int16(d.calibval[20]))
-	d.digP9 = int16(int16(d.calibval[23])<<8 | int16(d.calibval[22]))
-	// fmt.Printf("P %#v %#v %#v %#v %#v %#v %#v %#v %#v\n", d.digP1, d.digP2, d.digP3, d.digP4, d.digP5, d.digP6, d.digP7, d.digP8, d.digP9)
+	d.digP1 = uint16(d.calibval[7])<<8 | uint16(d.calibval[6])
+	d.digP2 = int16(d.calibval[9])<<8 | int16(d.calibval[8])
+	d.digP3 = int16(d.calibval[11])<<8 | int16(d.calibval[10])
+	d.digP4 = int16(d.calibval[13])<<8 | int16(d.calibval[12])
+	d.digP5 = int16(d.calibval[15])<<8 | int16(d.calibval[14])
+	d.digP6 = int16(d.calibval[17])<<8 | int16(d.calibval[16])
+	d.digP7 = int16(d.calibval[19])<<8 | int16(d.calibval[18])
+	d.digP8 = int16(d.calibval[21])<<8 | int16(d.calibval[20])
+	d.digP9 = int16(d.calibval[23])<<8 | int16(d.calibval[22])
 	return nil
 }
 
@@ -127,21 +125,10 @@ func (d *BME280) calibrateHum() error {
 	d.digH4 = int16(d.calibval[3])<<4 | (0x0f & int16(d.calibval[4]))
 	d.digH5 = int16(d.calibval[5])<<4 | (int16(d.calibval[4]) >> 4)
 	d.digH6 = int8(d.calibval[6])
-	// fmt.Printf("H %#v %#v %#v %#v %#v %#v\n", d.digH1, d.digH2, d.digH3, d.digH4, d.digH5, d.digH6)
 	return nil
 }
 
-func (d *BME280) callibrate() error {
-	d.cmu.RLock()
-	if d.calibrated {
-		d.cmu.RUnlock()
-		return nil
-	}
-	d.cmu.RUnlock()
-
-	d.cmu.Lock()
-	defer d.cmu.Unlock()
-
+func (d *BME280) calibrate() error {
 	d.calibval = make([]byte, 26)
 	if err := d.Bus.ReadFromReg(DeviceAddr, byte(0x88), d.calibval); err != nil {
 		return err
@@ -161,8 +148,6 @@ func (d *BME280) callibrate() error {
 	if err := d.calibrateHum(); err != nil {
 		return err
 	}
-
-	d.calibrated = true
 
 	return nil
 }
@@ -202,7 +187,6 @@ func (d *BME280) compensatePres(raw int32) float64 {
 	v1 = (p3*v1*v1/524288.0 + p2*v1) / 524288.0
 	v1 = (1.0 + v1/32768.0) * p1
 
-	/* Avoid exception caused by division by zero */
 	if v1 != 0.0 {
 		pres = (pres - (v2 / 4096.0)) * 6250.0 / v1
 	} else {
@@ -243,17 +227,18 @@ func (d *BME280) compensateHum(raw int32) float64 {
 	return hum
 }
 
+// Read : fetching data from BME280
 func (d *BME280) Read() ([]float64, error) {
 	data := make([]byte, 8)
-	if err := d.Bus.ReadFromReg(DeviceAddr, byte(0xf7), data); err != nil {
+	if err := d.Bus.ReadFromReg(DeviceAddr, ReadDataAddr, data); err != nil {
 		return nil, err
 	}
-	presRaw := (int32(data[0]) << 12) | (int32(data[1]) << 4) | (int32(data[2]) >> 4)
-	tempRaw := (int32(data[3]) << 12) | (int32(data[4]) << 4) | (int32(data[5]) >> 4)
-	humRaw := (int32(data[6]) << 8) | int32(data[7])
+
+	presRaw := int32(uint32(data[0])<<12 | uint32(data[1])<<4 | uint32(data[2])>>4)
+	tempRaw := int32(uint32(data[3])<<12 | uint32(data[4])<<4 | uint32(data[5])>>4)
+	humRaw := int32(uint32(data[6])<<8 | uint32(data[7]))
 
 	d.tfine = 0 // initialize
-
 	temp := d.compensateTemp(tempRaw)
 	pres := d.compensatePres(presRaw)
 	hum := d.compensateHum(humRaw)
